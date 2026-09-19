@@ -1,8 +1,3 @@
-"""
-FileTrack Main Application
-FastAPI REST API & Static Frontend Server for Sensitive Document Repository & LAN Scanner.
-"""
-
 import os
 import uuid
 import shutil

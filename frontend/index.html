@@ -713,6 +713,14 @@
   <!-- TOAST NOTIFICATION STACK -->
   <div id="toastContainer" class="toast-stack"></div>
 
+  <!-- PDF.js for IDM-safe in-browser PDF rendering (canvas-based, no download trigger) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (typeof pdfjsLib !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
+
   <!-- Application Script -->
   <script src="/static/js/app.js"></script>
 </body>

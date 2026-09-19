@@ -1,9 +1,3 @@
-/**
- * FileTrack Application Script
- * Frontend client for Sensitive Document Repository & Canon LAN Scanner
- * Features Modern Sidebar Navigation, Document Management & Scan Studio
- */
-
 // ==============================================================================
 // STATE MANAGEMENT
 // ==============================================================================
@@ -970,7 +964,7 @@ function closeScanModal() {
 }
 
 // ==============================================================================
-// DOCUMENT PREVIEW VIEWER (PDF / Image)
+// DOCUMENT PREVIEW VIEWER (PDF / IMAGE)
 // ==============================================================================
 
 let activeBlobUrl = null;
@@ -997,110 +991,72 @@ async function openViewerModal(fileId) {
   const isPdf = file.file_format === 'pdf' || file.display_name.toLowerCase().endsWith('.pdf');
   const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(file.file_format.toLowerCase());
 
-  if (isPdf) {
-    // ===========================================================
-    // PDF rendering via PDF.js canvas — completely bypasses IDM.
-    // PDF.js fetches bytes internally and draws each page to a
-    // <canvas> element, so IDM never sees a "download" trigger.
-    // ===========================================================
-    if (typeof pdfjsLib === 'undefined') {
+  try {
+    // Fetch the raw file bytes with auth — bypass api() to avoid JSON auto-parsing
+    const rawResp = await fetch(`/api/files/${file.id}`, {
+      headers: state.token ? { 'Authorization': `Bearer ${state.token}` } : {},
+      credentials: 'include'
+    });
+
+    if (!rawResp.ok) throw new Error(`HTTP ${rawResp.status}`);
+
+    const blob = await rawResp.blob();
+
+    if (isPdf) {
+      // Create a blob URL typed as application/pdf so the browser renders it inline
+      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
+      activeBlobUrl = URL.createObjectURL(pdfBlob);
+
+      // iframe is the most reliable inline PDF viewer across Chrome, Edge, Firefox
       dom.viewerContent.innerHTML = `
-        <div class="unsupported-viewer">
-          <p>PDF viewer library failed to load. Please check your internet connection and reload the page.</p>
-          <a href="${dom.viewerDownloadBtn.href}" class="btn btn-primary" style="margin-top:14px;">Download PDF</a>
-        </div>
+        <iframe
+          src="${activeBlobUrl}"
+          class="pdf-viewer-frame"
+          title="${escapeHtml(file.display_name)}"
+          type="application/pdf"
+        >
+          <div class="pdf-fallback">
+            <p>Your browser does not support inline PDF preview.</p>
+            <a href="${dom.viewerDownloadBtn.href}" class="btn btn-primary">Download PDF</a>
+          </div>
+        </iframe>
       `;
-      return;
-    }
-
-    try {
-      // Token passed as query param so PDF.js XHR request is authenticated.
-      // IDM ignores XHR responses that are consumed by JavaScript (not navigations).
-      const pdfUrl = `/api/files/${file.id}?token=${encodeURIComponent(state.token || '')}`;
-
-      const loadingTask = pdfjsLib.getDocument({
-        url: pdfUrl,
-        httpHeaders: state.token ? { 'Authorization': `Bearer ${state.token}` } : {},
-        withCredentials: true
-      });
-
-      const pdfDoc = await loadingTask.promise;
-      const totalPages = pdfDoc.numPages;
-
-      // Scrollable container for all pages
-      const container = document.createElement('div');
-      container.className = 'pdf-canvas-container';
-      dom.viewerContent.innerHTML = '';
-      dom.viewerContent.appendChild(container);
-
-      // Render each page as its own canvas element
-      for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
-        const page = await pdfDoc.getPage(pageNum);
-
-        const viewportBase = page.getViewport({ scale: 1 });
-        const containerWidth = dom.viewerContent.clientWidth || 780;
-        const scale = Math.min(1.5, (containerWidth - 32) / viewportBase.width);
-        const viewport = page.getViewport({ scale });
-
-        const canvas = document.createElement('canvas');
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        canvas.className = 'pdf-page-canvas';
-
-        const pageWrap = document.createElement('div');
-        pageWrap.className = 'pdf-page-wrap';
-
-        const pageLabel = document.createElement('span');
-        pageLabel.className = 'pdf-page-label';
-        pageLabel.textContent = `Page ${pageNum} / ${totalPages}`;
-
-        pageWrap.appendChild(canvas);
-        pageWrap.appendChild(pageLabel);
-        container.appendChild(pageWrap);
-
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
-      }
-    } catch (err) {
-      dom.viewerContent.innerHTML = `
-        <div class="unsupported-viewer">
-          <p>Could not render PDF preview: ${escapeHtml(err.message)}</p>
-          <a href="${dom.viewerDownloadBtn.href}" class="btn btn-primary" style="margin-top:14px;">Download PDF</a>
-        </div>
-      `;
-    }
-
-  } else if (isImage) {
-    // Images: fetch with Authorization header → blob URL → <img>
-    try {
-      const rawResp = await fetch(`/api/files/${file.id}`, {
-        headers: state.token ? { 'Authorization': `Bearer ${state.token}` } : {},
-        credentials: 'include'
-      });
-      if (!rawResp.ok) throw new Error(`HTTP ${rawResp.status}`);
-      const blob = await rawResp.blob();
+    } else if (isImage) {
       const imgBlob = new Blob([blob], { type: blob.type || 'image/*' });
       activeBlobUrl = URL.createObjectURL(imgBlob);
       dom.viewerContent.innerHTML = `<img src="${activeBlobUrl}" alt="${escapeHtml(file.display_name)}" class="img-viewer-display">`;
-    } catch (err) {
+    } else {
       dom.viewerContent.innerHTML = `
         <div class="unsupported-viewer">
-          <p>Error loading image: ${escapeHtml(err.message)}</p>
-          <a href="${dom.viewerDownloadBtn.href}" class="btn btn-primary" style="margin-top:14px;">Download Image</a>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
+          <p>Direct in-browser preview is not supported for <strong>.${escapeHtml(file.file_format)}</strong> files.</p>
+          <a href="${dom.viewerDownloadBtn.href}" class="btn btn-primary" style="margin-top:14px;">Download Document</a>
         </div>
       `;
     }
-
-  } else {
-    dom.viewerContent.innerHTML = `
-      <div class="unsupported-viewer">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-          <polyline points="14 2 14 8 20 8"></polyline>
-        </svg>
-        <p>Direct in-browser preview is not supported for <strong>.${escapeHtml(file.file_format)}</strong> files.</p>
-        <a href="${dom.viewerDownloadBtn.href}" class="btn btn-primary" style="margin-top:14px;">Download Document</a>
-      </div>
-    `;
+  } catch (err) {
+    // Fallback: try a direct URL approach with token in query string
+    const directUrl = `/api/files/${file.id}?token=${encodeURIComponent(state.token || '')}`;
+    if (isPdf) {
+      dom.viewerContent.innerHTML = `
+        <iframe
+          src="${directUrl}"
+          class="pdf-viewer-frame"
+          title="${escapeHtml(file.display_name)}"
+        >
+        </iframe>
+      `;
+    } else {
+      dom.viewerContent.innerHTML = `
+        <div class="unsupported-viewer">
+          <p>Error loading preview: ${escapeHtml(err.message)}</p>
+          <a href="${dom.viewerDownloadBtn.href}" class="btn btn-primary" style="margin-top:14px;">Download Document</a>
+        </div>
+      `;
+    }
   }
 }
 

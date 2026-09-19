@@ -14,7 +14,13 @@ const state = {
   activeScanJobId: null,
   scanPollInterval: null,
   scannerInfo: null,
-  allFoldersCache: []
+  allFoldersCache: [],
+  // Pagination
+  currentPage: 1,
+  PER_PAGE: 8,
+  // Sorting
+  sortField: 'date',   // 'date' | 'name' | 'size'
+  sortOrder: 'desc'    // 'asc' | 'desc'
 };
 
 // ==============================================================================
@@ -149,7 +155,31 @@ const dom = {
   btnConfirmDelete: document.getElementById('btnConfirmDelete'),
 
   // Toast Container
-  toastContainer: document.getElementById('toastContainer')
+  toastContainer: document.getElementById('toastContainer'),
+
+  // Sort controls
+  sortField: document.getElementById('sortField'),
+  sortOrderBtn: document.getElementById('sortOrderBtn'),
+  sortOrderLabel: document.getElementById('sortOrderLabel'),
+  sortAscIcon: document.getElementById('sortAscIcon'),
+  sortDescIcon: document.getElementById('sortDescIcon'),
+
+  // Pagination
+  paginationContainer: document.getElementById('paginationContainer'),
+  btnPrevPage: document.getElementById('btnPrevPage'),
+  btnNextPage: document.getElementById('btnNextPage'),
+  pageNumbersList: document.getElementById('pageNumbersList'),
+  pageInfo: document.getElementById('pageInfo'),
+
+  // Upload staging modal
+  uploadStagingModal: document.getElementById('uploadStagingModal'),
+  closeUploadStagingModal: document.getElementById('closeUploadStagingModal'),
+  stagingFileList: document.getElementById('stagingFileList'),
+  stagingAddMoreInput: document.getElementById('stagingAddMoreInput'),
+  stagingSubtitle: document.getElementById('stagingSubtitle'),
+  btnCancelUploadStaging: document.getElementById('btnCancelUploadStaging'),
+  btnCommitUpload: document.getElementById('btnCommitUpload'),
+  commitUploadLabel: document.getElementById('commitUploadLabel')
 };
 
 // ==============================================================================
@@ -371,14 +401,12 @@ function setSourceFilter(filter) {
 
   if (filter === 'all') {
     dom.filterIndicator.classList.add('hidden');
-    state.files = [...state.rawFiles];
   } else {
     dom.filterIndicator.classList.remove('hidden');
     dom.filterIndicatorText.textContent = `Filtered by: ${filter === 'scan' ? 'Scanned Documents' : 'Direct Uploads'}`;
-    state.files = state.rawFiles.filter(f => f.source === filter);
   }
 
-  renderFiles();
+  applySortAndFilter();
 }
 
 // ==============================================================================
@@ -395,16 +423,9 @@ async function loadFolder(folderId = null) {
     state.folders = data.folders || [];
     state.rawFiles = data.files || [];
 
-    // Apply active source filter
-    if (state.sourceFilter === 'all') {
-      state.files = [...state.rawFiles];
-    } else {
-      state.files = state.rawFiles.filter(f => f.source === state.sourceFilter);
-    }
-
     renderBreadcrumbs();
     renderFolders();
-    renderFiles();
+    applySortAndFilter();
     fetchAllFoldersTree(); // Updates sidebar quick folders and move dropdown
   } catch (err) {
     showToast(err.message, 'error');
@@ -503,12 +524,49 @@ function renderFolders() {
   });
 }
 
+// ==============================================================================
+// SORT + FILTER APPLICATION
+// ==============================================================================
+function applySortAndFilter() {
+  // Apply source filter
+  if (state.sourceFilter === 'all') {
+    state.files = [...state.rawFiles];
+  } else {
+    state.files = state.rawFiles.filter(f => f.source === state.sourceFilter);
+  }
+
+  // Apply sort
+  state.files.sort((a, b) => {
+    let valA, valB;
+    if (state.sortField === 'name') {
+      valA = (a.display_name || '').toLowerCase();
+      valB = (b.display_name || '').toLowerCase();
+      return state.sortOrder === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    } else if (state.sortField === 'size') {
+      valA = a.size_bytes || 0;
+      valB = b.size_bytes || 0;
+    } else { // date
+      valA = new Date(a.created_at || 0).getTime();
+      valB = new Date(b.created_at || 0).getTime();
+    }
+    return state.sortOrder === 'asc' ? valA - valB : valB - valA;
+  });
+
+  // Reset to page 1 when filter/sort changes
+  state.currentPage = 1;
+  renderFiles();
+}
+
+// ==============================================================================
+// RENDER FILES WITH PAGINATION (max 8 per page)
+// ==============================================================================
 function renderFiles() {
   dom.filesContainer.innerHTML = '';
   dom.filesCountBadge.textContent = state.files.length;
 
   if (state.files.length === 0) {
     dom.emptyRepositoryNotice.classList.remove('hidden');
+    dom.paginationContainer.classList.add('hidden');
     return;
   }
   dom.emptyRepositoryNotice.classList.add('hidden');
@@ -519,7 +577,15 @@ function renderFiles() {
     dom.filesContainer.className = 'files-grid';
   }
 
-  state.files.forEach(file => {
+  // Slice to current page
+  const totalPages = Math.ceil(state.files.length / state.PER_PAGE);
+  if (state.currentPage > totalPages) state.currentPage = totalPages;
+  if (state.currentPage < 1) state.currentPage = 1;
+
+  const startIdx = (state.currentPage - 1) * state.PER_PAGE;
+  const pageFiles = state.files.slice(startIdx, startIdx + state.PER_PAGE);
+
+  pageFiles.forEach(file => {
     const card = document.createElement('div');
     card.className = 'file-card';
 
@@ -532,7 +598,7 @@ function renderFiles() {
     if (isImage || isPdf) {
       thumbHtml = `
         <div class="file-thumb-wrap" onclick="openViewerModal(${file.id})">
-          <img src="/api/files/${file.id}/thumbnail" alt="${escapeHtml(file.display_name)}" onerror="this.parentElement.innerHTML='<div class=\\'file-icon-placeholder file-icon-${isPdf ? 'pdf' : 'image'}\\'>📄</div>'">
+          <img src="/api/files/${file.id}/thumbnail" alt="${escapeHtml(file.display_name)}" onerror="this.parentElement.innerHTML='<div class=\'file-icon-placeholder file-icon-${isPdf ? 'pdf' : 'image'}\'>📄</div>'">
         </div>
       `;
     } else {
@@ -595,6 +661,59 @@ function renderFiles() {
     `;
     dom.filesContainer.appendChild(card);
   });
+
+  renderPagination(totalPages);
+}
+
+function renderPagination(totalPages) {
+  if (totalPages <= 1) {
+    dom.paginationContainer.classList.add('hidden');
+    return;
+  }
+  dom.paginationContainer.classList.remove('hidden');
+
+  const cur = state.currentPage;
+  dom.pageInfo.textContent = `Page ${cur} of ${totalPages}`;
+  dom.btnPrevPage.disabled = cur === 1;
+  dom.btnNextPage.disabled = cur === totalPages;
+
+  // Build page number buttons (show up to 5 around current)
+  dom.pageNumbersList.innerHTML = '';
+  let startPage = Math.max(1, cur - 2);
+  let endPage   = Math.min(totalPages, startPage + 4);
+  if (endPage - startPage < 4) startPage = Math.max(1, endPage - 4);
+
+  if (startPage > 1) {
+    appendPageBtn(1, totalPages);
+    if (startPage > 2) {
+      const ellipsis = document.createElement('span');
+      ellipsis.className = 'page-ellipsis';
+      ellipsis.textContent = '…';
+      dom.pageNumbersList.appendChild(ellipsis);
+    }
+  }
+
+  for (let p = startPage; p <= endPage; p++) {
+    appendPageBtn(p, totalPages);
+  }
+
+  if (endPage < totalPages) {
+    if (endPage < totalPages - 1) {
+      const ellipsis = document.createElement('span');
+      ellipsis.className = 'page-ellipsis';
+      ellipsis.textContent = '…';
+      dom.pageNumbersList.appendChild(ellipsis);
+    }
+    appendPageBtn(totalPages, totalPages);
+  }
+}
+
+function appendPageBtn(p, totalPages) {
+  const btn = document.createElement('button');
+  btn.className = `page-num-btn ${p === state.currentPage ? 'active' : ''}`;
+  btn.textContent = p;
+  btn.onclick = () => { state.currentPage = p; renderFiles(); };
+  dom.pageNumbersList.appendChild(btn);
 }
 
 // ==============================================================================
@@ -622,6 +741,35 @@ if (state.viewMode === 'list') {
 }
 
 // ==============================================================================
+// SORT CONTROLS
+// ==============================================================================
+dom.sortField.addEventListener('change', () => {
+  state.sortField = dom.sortField.value;
+  state.currentPage = 1;
+  applySortAndFilter();
+});
+
+dom.sortOrderBtn.addEventListener('click', () => {
+  state.sortOrder = state.sortOrder === 'asc' ? 'desc' : 'asc';
+  dom.sortOrderLabel.textContent = state.sortOrder === 'asc' ? 'ASC' : 'DESC';
+  dom.sortAscIcon.classList.toggle('hidden', state.sortOrder !== 'asc');
+  dom.sortDescIcon.classList.toggle('hidden', state.sortOrder !== 'desc');
+  state.currentPage = 1;
+  applySortAndFilter();
+});
+
+// ==============================================================================
+// PAGINATION CONTROLS
+// ==============================================================================
+dom.btnPrevPage.addEventListener('click', () => {
+  if (state.currentPage > 1) { state.currentPage--; renderFiles(); }
+});
+dom.btnNextPage.addEventListener('click', () => {
+  const totalPages = Math.ceil(state.files.length / state.PER_PAGE);
+  if (state.currentPage < totalPages) { state.currentPage++; renderFiles(); }
+});
+
+// ==============================================================================
 // REPOSITORY STATS & BADGES
 // ==============================================================================
 async function loadStats() {
@@ -641,60 +789,121 @@ async function loadStats() {
 }
 
 // ==============================================================================
-// FILE UPLOAD (DRAG & DROP / BUTTON)
+// FILE UPLOAD — STAGING MODAL (Select → Review → Upload)
 // ==============================================================================
+
+// Staged file list: array of File objects
+let stagedFiles = [];
+
+function openUploadStagingModal(newFiles = []) {
+  // Merge new files with existing staged (avoid duplicates by name+size)
+  newFiles.forEach(f => {
+    const already = stagedFiles.some(s => s.name === f.name && s.size === f.size);
+    if (!already) stagedFiles.push(f);
+  });
+  renderStagingList();
+  dom.uploadStagingModal.classList.remove('hidden');
+}
+
+function renderStagingList() {
+  dom.stagingSubtitle.textContent = `${stagedFiles.length} file(s) selected`;
+  dom.commitUploadLabel.textContent = `Upload ${stagedFiles.length} File${stagedFiles.length !== 1 ? 's' : ''}`;
+  dom.stagingFileList.innerHTML = '';
+
+  if (stagedFiles.length === 0) {
+    dom.stagingFileList.innerHTML = '<p class="staging-empty">No files selected. Click "Add More Files" below.</p>';
+    return;
+  }
+
+  stagedFiles.forEach((file, idx) => {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const row = document.createElement('div');
+    row.className = 'staging-file-row';
+    row.innerHTML = `
+      <div class="staging-file-icon staging-icon-${['pdf'].includes(ext) ? 'pdf' : ['png','jpg','jpeg','webp'].includes(ext) ? 'image' : 'doc'}">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+        </svg>
+      </div>
+      <div class="staging-file-info">
+        <span class="staging-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+        <span class="staging-file-meta">${formatBytes(file.size)} &bull; ${ext.toUpperCase()}</span>
+      </div>
+      <span class="staging-file-status" id="stage-status-${idx}"></span>
+      <button class="staging-remove-btn" onclick="removeStagedFile(${idx})" title="Remove">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+    `;
+    dom.stagingFileList.appendChild(row);
+  });
+}
+
+function removeStagedFile(idx) {
+  stagedFiles.splice(idx, 1);
+  renderStagingList();
+}
+
+function closeUploadStagingModal() {
+  stagedFiles = [];
+  dom.uploadStagingModal.classList.add('hidden');
+  dom.stagingFileList.innerHTML = '';
+  dom.fileUploadInput.value = '';
+  dom.stagingAddMoreInput.value = '';
+}
+
+// Main upload button → open staging modal
 dom.btnUpload.addEventListener('click', () => dom.fileUploadInput.click());
 
 dom.fileUploadInput.addEventListener('change', (e) => {
   if (e.target.files.length > 0) {
-    handleFileUpload(e.target.files);
+    openUploadStagingModal(Array.from(e.target.files));
   }
 });
 
-['dragenter', 'dragover'].forEach(eventName => {
-  dom.dropZone.addEventListener(eventName, (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dom.dropZone.classList.add('dragover');
-  });
-});
-
-['dragleave', 'drop'].forEach(eventName => {
-  dom.dropZone.addEventListener(eventName, (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dom.dropZone.classList.remove('dragover');
-  });
-});
-
-dom.dropZone.addEventListener('drop', (e) => {
-  const dt = e.dataTransfer;
-  const files = dt.files;
-  if (files.length > 0) {
-    handleFileUpload(files);
+// "Add More Files" inside staging modal
+dom.stagingAddMoreInput.addEventListener('change', (e) => {
+  if (e.target.files.length > 0) {
+    openUploadStagingModal(Array.from(e.target.files));
+    e.target.value = '';
   }
 });
 
-async function handleFileUpload(fileList) {
+dom.closeUploadStagingModal.addEventListener('click', closeUploadStagingModal);
+dom.btnCancelUploadStaging.addEventListener('click', closeUploadStagingModal);
+
+// Click outside modal to close
+dom.uploadStagingModal.addEventListener('click', (e) => {
+  if (e.target === dom.uploadStagingModal) closeUploadStagingModal();
+});
+
+// Commit upload
+dom.btnCommitUpload.addEventListener('click', async () => {
+  if (stagedFiles.length === 0) {
+    showToast('No files selected.', 'error');
+    return;
+  }
+
+  dom.btnCommitUpload.disabled = true;
+  dom.commitUploadLabel.textContent = 'Uploading...';
+
+  // Show progress bar
+  dom.uploadProgressContainer.classList.remove('hidden');
+  dom.uploadProgressBar.style.width = '10%';
+  dom.uploadProgressText.textContent = `Uploading ${stagedFiles.length} file(s)...`;
+
   const formData = new FormData();
-  for (let i = 0; i < fileList.length; i++) {
-    formData.append('files', fileList[i]);
-  }
+  stagedFiles.forEach(f => formData.append('files', f));
   if (state.currentFolderId !== null) {
     formData.append('folder_id', state.currentFolderId);
   }
 
-  dom.uploadProgressContainer.classList.remove('hidden');
-  dom.uploadProgressBar.style.width = '20%';
-  dom.uploadProgressText.textContent = `Uploading ${fileList.length} file(s)...`;
-
   try {
-    dom.uploadProgressBar.style.width = '65%';
-    const res = await api('/api/upload', {
-      method: 'POST',
-      body: formData
-    });
-
+    dom.uploadProgressBar.style.width = '60%';
+    const res = await api('/api/upload', { method: 'POST', body: formData });
     dom.uploadProgressBar.style.width = '100%';
     dom.uploadProgressText.textContent = 'Upload complete!';
     showToast(`Successfully uploaded ${res.files.length} document(s).`, 'success');
@@ -702,16 +911,24 @@ async function handleFileUpload(fileList) {
     setTimeout(() => {
       dom.uploadProgressContainer.classList.add('hidden');
       dom.uploadProgressBar.style.width = '0%';
-    }, 1200);
+    }, 1400);
 
+    closeUploadStagingModal();
     loadFolder(state.currentFolderId);
     loadStats();
   } catch (err) {
     dom.uploadProgressContainer.classList.add('hidden');
     showToast(err.message, 'error');
   } finally {
+    dom.btnCommitUpload.disabled = false;
+    dom.commitUploadLabel.textContent = `Upload ${stagedFiles.length} File${stagedFiles.length !== 1 ? 's' : ''}`;
     dom.fileUploadInput.value = '';
   }
+});
+
+async function handleFileUpload(fileList) {
+  // Legacy shim — redirects to staging modal
+  openUploadStagingModal(Array.from(fileList));
 }
 
 // ==============================================================================
@@ -1218,13 +1435,8 @@ dom.globalSearchInput.addEventListener('input', (e) => {
       const res = await api(`/api/search?q=${encodeURIComponent(query)}`);
       state.folders = res.folders || [];
       state.rawFiles = res.files || [];
-      if (state.sourceFilter === 'all') {
-        state.files = [...state.rawFiles];
-      } else {
-        state.files = state.rawFiles.filter(f => f.source === state.sourceFilter);
-      }
       renderFolders();
-      renderFiles();
+      applySortAndFilter();
     } catch (err) {
       showToast(err.message, 'error');
     }
@@ -1271,6 +1483,7 @@ window.addEventListener('keydown', (e) => {
     dom.folderModal.classList.add('hidden');
     dom.renameModal.classList.add('hidden');
     dom.confirmDeleteModal.classList.add('hidden');
+    if (!dom.uploadStagingModal.classList.contains('hidden')) closeUploadStagingModal();
     closeMobileSidebar();
   }
 });

@@ -2195,3 +2195,305 @@ html, body {
   letter-spacing: 0.04em;
   font-weight: 500;
 }
+
+
+/* ==========================================================================
+   SORT CONTROLS
+   ========================================================================== */
+.section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.sort-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.sort-select {
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-main);
+  background: var(--surface-white);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.18s;
+}
+.sort-select:focus { border-color: var(--border-focus); }
+
+.sort-order-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface-white);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+  white-space: nowrap;
+}
+.sort-order-btn:hover {
+  border-color: var(--border-focus);
+  color: var(--primary-cyan);
+  background: #f0fdff;
+}
+
+/* ==========================================================================
+   PAGINATION
+   ========================================================================== */
+.pagination-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-light);
+  flex-wrap: wrap;
+}
+
+.page-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border-light);
+  background: var(--surface-white);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.page-btn:hover:not(:disabled) {
+  border-color: var(--border-focus);
+  color: var(--primary-cyan);
+}
+.page-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.page-numbers {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.page-num-btn {
+  min-width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border-light);
+  background: var(--surface-white);
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.18s;
+  padding: 0 6px;
+}
+.page-num-btn:hover { border-color: var(--border-focus); color: var(--primary-cyan); }
+.page-num-btn.active {
+  background: var(--accent-gradient);
+  border-color: transparent;
+  color: #fff;
+}
+
+.page-ellipsis {
+  color: var(--text-subtle);
+  font-size: 0.9rem;
+  padding: 0 2px;
+  user-select: none;
+}
+
+.page-info {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  white-space: nowrap;
+  padding-left: 6px;
+}
+
+/* ==========================================================================
+   UPLOAD STAGING MODAL
+   ========================================================================== */
+.modal-upload-staging {
+  width: 100%;
+  max-width: 560px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-upload-staging .modal-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 24px;
+}
+
+.staging-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.staging-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  padding: 20px 0;
+}
+
+.staging-file-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  transition: border-color 0.15s;
+}
+.staging-file-row:hover { border-color: #c8d0de; }
+
+.staging-file-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.staging-icon-pdf   { background: #fff0f0; color: #e53935; }
+.staging-icon-image { background: #f0f7ff; color: #1e88e5; }
+.staging-icon-doc   { background: #f3f0ff; color: var(--primary-purple); }
+
+.staging-file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.staging-file-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.staging-file-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.staging-file-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.staging-remove-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.staging-remove-btn:hover { background: #ffe5e5; color: var(--danger); }
+
+.staging-add-more-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border: 1.5px dashed var(--border-light);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.18s, color 0.18s, background 0.18s;
+  user-select: none;
+  margin-top: 4px;
+}
+.staging-add-more-btn:hover {
+  border-color: var(--primary-cyan);
+  color: var(--primary-cyan);
+  background: #f0fdff;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-light);
+}
+
+/* Compact upload progress bar (outside drop zone) */
+.upload-progress-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--surface-white);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+}
+.upload-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: #e8ecf4;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent-gradient);
+  border-radius: 999px;
+  transition: width 0.4s ease;
+  width: 0%;
+}
+.upload-progress-container span {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}

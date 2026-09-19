@@ -47,6 +47,20 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=1)
 
 
+class CreateAccountRequest(BaseModel):
+    admin_username: str = Field(..., min_length=1, max_length=64)
+    admin_password: str = Field(..., min_length=1)
+    new_username: str = Field(..., min_length=3, max_length=64)
+    new_password: str = Field(..., min_length=6)
+
+
+class ChangePasswordRequest(BaseModel):
+    admin_username: str = Field(..., min_length=1, max_length=64)
+    admin_password: str = Field(..., min_length=1)
+    target_username: str = Field(..., min_length=1, max_length=64)
+    new_password: str = Field(..., min_length=6)
+
+
 class FolderCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     parent_id: Optional[int] = None
@@ -163,6 +177,159 @@ def login(payload: LoginRequest, request: Request, response: Response):
             "id": user["id"],
             "username": user["username"]
         }
+    }
+
+
+
+
+def verify_admin_auth(admin_username: str, admin_password: str, request: Optional[Request] = None) -> Dict[str, Any]:
+    """
+    Verifies that the provided admin credentials belong to an authentic admin account.
+    Validates rate-limiting lockout and password verification.
+    """
+    clean_admin = admin_username.strip()
+    if not clean_admin or not admin_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin username and password are required for authorization."
+        )
+
+    client_ip = request.client.host if request and request.client else "127.0.0.1"
+    rate_key = f"{client_ip}_{clean_admin}"
+    auth.check_rate_limit(rate_key)
+
+    try:
+        admin_user = database.query_one(
+            "SELECT * FROM users WHERE username = %s",
+            (clean_admin,)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Database connection error: {e}"
+        )
+
+    if not admin_user or not auth.verify_password(admin_password, admin_user["password_hash"]):
+        auth.record_login_failure(rate_key)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid administrator credentials. Authorization denied."
+        )
+
+    auth.record_login_success(rate_key)
+
+    # Check admin privileges
+    is_admin = (
+        clean_admin.lower() == "admin"
+        or admin_user.get("id") == 1
+        or bool(admin_user.get("is_admin"))
+    )
+    if not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The authorizing account does not have administrator privileges."
+        )
+
+    return admin_user
+
+
+@app.post("/api/auth/create-account")
+def create_account(payload: CreateAccountRequest, request: Request):
+    """
+    Creates a new user account. Requires valid admin credentials to authorize creation.
+    """
+    admin_user = verify_admin_auth(payload.admin_username, payload.admin_password, request)
+
+    clean_new_user = payload.new_username.strip()
+    import re
+    if not re.match(r"^[a-zA-Z0-9_\-\.]{3,64}$", clean_new_user):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username must be 3-64 characters and contain only letters, numbers, hyphens, or underscores."
+        )
+
+    if len(payload.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters long."
+        )
+
+    existing = database.query_one(
+        "SELECT id FROM users WHERE LOWER(username) = LOWER(%s)",
+        (clean_new_user,)
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Username '{clean_new_user}' is already registered."
+        )
+
+    password_hash = auth.hash_password(payload.new_password)
+    user_id = database.execute(
+        "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
+        (clean_new_user, password_hash)
+    )
+
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    log_audit(
+        "user_create",
+        details=f"User '{clean_new_user}' (id={user_id}) created by admin '{admin_user['username']}'",
+        ip_address=client_ip
+    )
+
+    return {
+        "success": True,
+        "message": f"Account '{clean_new_user}' created successfully. You may now sign in.",
+        "user": {"id": user_id, "username": clean_new_user}
+    }
+
+
+@app.post("/api/auth/change-password")
+def change_password(payload: ChangePasswordRequest, request: Request):
+    """
+    Updates a user's password. Requires valid admin credentials to authorize the change.
+    """
+    admin_user = verify_admin_auth(payload.admin_username, payload.admin_password, request)
+
+    clean_target = payload.target_username.strip()
+    if not clean_target:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Target account username is required."
+        )
+
+    if len(payload.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 6 characters long."
+        )
+
+    target_user = database.query_one(
+        "SELECT id, username FROM users WHERE LOWER(username) = LOWER(%s)",
+        (clean_target,)
+    )
+    if not target_user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User '{clean_target}' not found in repository."
+        )
+
+    new_hash = auth.hash_password(payload.new_password)
+    database.execute(
+        "UPDATE users SET password_hash = %s WHERE id = %s",
+        (new_hash, target_user["id"])
+    )
+
+    client_ip = request.client.host if request.client else "127.0.0.1"
+    log_audit(
+        "password_change",
+        details=f"Password for '{target_user['username']}' updated by admin '{admin_user['username']}'",
+        ip_address=client_ip
+    )
+
+    return {
+        "success": True,
+        "message": f"Password for '{target_user['username']}' has been updated successfully."
     }
 
 

@@ -45,6 +45,31 @@ const dom = {
   userDisplayName: document.getElementById('userDisplayName'),
   userInitial: document.getElementById('userInitial'),
 
+  // Auth Tabs & Extra Forms
+  tabLogin: document.getElementById('tabLogin'),
+  tabRegister: document.getElementById('tabRegister'),
+  tabChangePass: document.getElementById('tabChangePass'),
+  createAccountForm: document.getElementById('createAccountForm'),
+  changePasswordForm: document.getElementById('changePasswordForm'),
+
+  regAdminUsername: document.getElementById('regAdminUsername'),
+  regAdminPassword: document.getElementById('regAdminPassword'),
+  regNewUsername: document.getElementById('regNewUsername'),
+  regNewPassword: document.getElementById('regNewPassword'),
+  regConfirmPassword: document.getElementById('regConfirmPassword'),
+  btnRegisterSubmit: document.getElementById('btnRegisterSubmit'),
+  regError: document.getElementById('regError'),
+  regSuccess: document.getElementById('regSuccess'),
+
+  cpAdminUsername: document.getElementById('cpAdminUsername'),
+  cpAdminPassword: document.getElementById('cpAdminPassword'),
+  cpTargetUsername: document.getElementById('cpTargetUsername'),
+  cpNewPassword: document.getElementById('cpNewPassword'),
+  cpConfirmPassword: document.getElementById('cpConfirmPassword'),
+  btnChangePassSubmit: document.getElementById('btnChangePassSubmit'),
+  cpError: document.getElementById('cpError'),
+  cpSuccess: document.getElementById('cpSuccess'),
+
   // Sidebar Nav & Filters
   navAllDocs: document.getElementById('navAllDocs'),
   navScansOnly: document.getElementById('navScansOnly'),
@@ -340,6 +365,190 @@ dom.loginForm.addEventListener('submit', async (e) => {
     dom.loginBtn.querySelector('span').textContent = 'Sign In to Repository';
   }
 });
+
+// ==============================================================================
+// AUTH TABS & ADMIN-AUTHORIZED USER MANAGEMENT
+// ==============================================================================
+
+function switchAuthTab(tab) {
+  // Tabs
+  dom.tabLogin.classList.toggle('active', tab === 'login');
+  dom.tabRegister.classList.toggle('active', tab === 'register');
+  dom.tabChangePass.classList.toggle('active', tab === 'changepass');
+
+  // Forms
+  dom.loginForm.classList.toggle('hidden', tab !== 'login');
+  dom.createAccountForm.classList.toggle('hidden', tab !== 'register');
+  dom.changePasswordForm.classList.toggle('hidden', tab !== 'changepass');
+
+  // Clear notices
+  dom.loginError.classList.add('hidden');
+  dom.regError.classList.add('hidden');
+  dom.regSuccess.classList.add('hidden');
+  dom.cpError.classList.add('hidden');
+  dom.cpSuccess.classList.add('hidden');
+
+  // Set default admin username if empty
+  if (tab === 'register' && !dom.regAdminUsername.value) {
+    dom.regAdminUsername.value = 'admin';
+  }
+  if (tab === 'changepass' && !dom.cpAdminUsername.value) {
+    dom.cpAdminUsername.value = 'admin';
+  }
+}
+
+dom.tabLogin.addEventListener('click', () => switchAuthTab('login'));
+dom.tabRegister.addEventListener('click', () => switchAuthTab('register'));
+dom.tabChangePass.addEventListener('click', () => switchAuthTab('changepass'));
+
+// CREATE NEW ACCOUNT (ADMIN AUTHORIZED)
+dom.createAccountForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  dom.regError.classList.add('hidden');
+  dom.regSuccess.classList.add('hidden');
+
+  const adminUsername = dom.regAdminUsername.value.trim();
+  const adminPassword = dom.regAdminPassword.value;
+  const newUsername = dom.regNewUsername.value.trim();
+  const newPassword = dom.regNewPassword.value;
+  const confirmPassword = dom.regConfirmPassword.value;
+
+  if (!adminUsername || !adminPassword) {
+    dom.regError.textContent = 'Admin credentials are required to authorize account creation.';
+    dom.regError.classList.remove('hidden');
+    return;
+  }
+
+  if (newPassword.length < 6) {
+    dom.regError.textContent = 'New password must be at least 6 characters long.';
+    dom.regError.classList.remove('hidden');
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    dom.regError.textContent = 'New passwords do not match. Please verify.';
+    dom.regError.classList.remove('hidden');
+    return;
+  }
+
+  dom.btnRegisterSubmit.disabled = true;
+  dom.btnRegisterSubmit.querySelector('span').textContent = 'Creating account...';
+
+  try {
+    const res = await api('/api/auth/create-account', {
+      method: 'POST',
+      body: JSON.stringify({
+        admin_username: adminUsername,
+        admin_password: adminPassword,
+        new_username: newUsername,
+        new_password: newPassword
+      })
+    });
+
+    dom.regSuccess.textContent = res.message || `Account '${newUsername}' created successfully!`;
+    dom.regSuccess.classList.remove('hidden');
+    showToast(`Account '${newUsername}' created! You may now sign in.`, 'success');
+
+    // Reset fields
+    dom.regNewUsername.value = '';
+    dom.regNewPassword.value = '';
+    dom.regConfirmPassword.value = '';
+    dom.regAdminPassword.value = '';
+
+    // Automatically switch to login tab with the new username pre-filled
+    setTimeout(() => {
+      switchAuthTab('login');
+      dom.loginUsername.value = newUsername;
+      dom.loginPassword.value = '';
+      dom.loginPassword.focus();
+    }, 1800);
+
+  } catch (err) {
+    dom.regError.textContent = err.message || 'Failed to create account.';
+    dom.regError.classList.remove('hidden');
+  } finally {
+    dom.btnRegisterSubmit.disabled = false;
+    dom.btnRegisterSubmit.querySelector('span').textContent = 'Create Account';
+  }
+});
+
+// CHANGE PASSWORD (ADMIN AUTHORIZED)
+dom.changePasswordForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  dom.cpError.classList.add('hidden');
+  dom.cpSuccess.classList.add('hidden');
+
+  const adminUsername = dom.cpAdminUsername.value.trim();
+  const adminPassword = dom.cpAdminPassword.value;
+  const targetUsername = dom.cpTargetUsername.value.trim();
+  const newPassword = dom.cpNewPassword.value;
+  const confirmPassword = dom.cpConfirmPassword.value;
+
+  if (!adminUsername || !adminPassword) {
+    dom.cpError.textContent = 'Admin credentials are required to authorize password change.';
+    dom.cpError.classList.remove('hidden');
+    return;
+  }
+
+  if (!targetUsername) {
+    dom.cpError.textContent = 'Target account username is required.';
+    dom.cpError.classList.remove('hidden');
+    return;
+  }
+
+  if (newPassword.length < 6) {
+    dom.cpError.textContent = 'New password must be at least 6 characters long.';
+    dom.cpError.classList.remove('hidden');
+    return;
+  }
+
+  if (newPassword !== confirmPassword) {
+    dom.cpError.textContent = 'New passwords do not match. Please verify.';
+    dom.cpError.classList.remove('hidden');
+    return;
+  }
+
+  dom.btnChangePassSubmit.disabled = true;
+  dom.btnChangePassSubmit.querySelector('span').textContent = 'Updating password...';
+
+  try {
+    const res = await api('/api/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({
+        admin_username: adminUsername,
+        admin_password: adminPassword,
+        target_username: targetUsername,
+        new_password: newPassword
+      })
+    });
+
+    dom.cpSuccess.textContent = res.message || `Password for '${targetUsername}' updated successfully!`;
+    dom.cpSuccess.classList.remove('hidden');
+    showToast(`Password for '${targetUsername}' updated!`, 'success');
+
+    // Reset fields
+    dom.cpTargetUsername.value = '';
+    dom.cpNewPassword.value = '';
+    dom.cpConfirmPassword.value = '';
+    dom.cpAdminPassword.value = '';
+
+    // Automatically switch to login tab with the target username pre-filled
+    setTimeout(() => {
+      switchAuthTab('login');
+      dom.loginUsername.value = targetUsername;
+      dom.loginPassword.value = '';
+      dom.loginPassword.focus();
+    }, 1800);
+
+  } catch (err) {
+    dom.cpError.textContent = err.message || 'Failed to update password.';
+    dom.cpError.classList.remove('hidden');
+  } finally {
+    dom.btnChangePassSubmit.disabled = false;
+    dom.btnChangePassSubmit.querySelector('span').textContent = 'Update Password';
+  }
+});
+
 
 dom.logoutBtn.addEventListener('click', async () => {
   try {

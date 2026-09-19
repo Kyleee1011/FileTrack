@@ -25,9 +25,17 @@
           <p class="auth-subtitle">LAN Sensitive Document Repository</p>
         </div>
 
+        <!-- Auth Mode Navigation Tabs -->
+        <div class="auth-tabs">
+          <button type="button" id="tabLogin" class="auth-tab active">Sign In</button>
+          <button type="button" id="tabRegister" class="auth-tab">New Account</button>
+          <button type="button" id="tabChangePass" class="auth-tab">Change Password</button>
+        </div>
+
+        <!-- 1. SIGN IN FORM -->
         <form id="loginForm" class="auth-form" onsubmit="return false;">
           <div class="form-group">
-            <label for="loginUsername">Admin Username</label>
+            <label for="loginUsername">Username</label>
             <input type="text" id="loginUsername" placeholder="admin" required autocomplete="username">
           </div>
           <div class="form-group">
@@ -40,6 +48,108 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="5" y1="12" x2="19" y2="12"></line>
               <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+        </form>
+
+        <!-- 2. CREATE ACCOUNT FORM (ADMIN AUTHORIZED) -->
+        <form id="createAccountForm" class="auth-form hidden" onsubmit="return false;">
+          <div class="admin-auth-banner">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <span>Admin Authorization Required</span>
+          </div>
+
+          <div class="admin-credentials-box">
+            <div class="form-group-sm">
+              <label for="regAdminUsername">Admin Username</label>
+              <input type="text" id="regAdminUsername" placeholder="admin" required autocomplete="username">
+            </div>
+            <div class="form-group-sm">
+              <label for="regAdminPassword">Admin Password</label>
+              <input type="password" id="regAdminPassword" placeholder="••••••••" required autocomplete="current-password">
+            </div>
+          </div>
+
+          <div class="form-divider">
+            <span>New User Details</span>
+          </div>
+
+          <div class="form-group">
+            <label for="regNewUsername">New Username</label>
+            <input type="text" id="regNewUsername" placeholder="e.g. jdoe" required autocomplete="new-username">
+          </div>
+          <div class="form-group">
+            <label for="regNewPassword">New Password</label>
+            <input type="password" id="regNewPassword" placeholder="Min. 6 characters" required autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label for="regConfirmPassword">Confirm Password</label>
+            <input type="password" id="regConfirmPassword" placeholder="••••••••" required autocomplete="new-password">
+          </div>
+
+          <div id="regError" class="alert-error hidden"></div>
+          <div id="regSuccess" class="alert-success hidden"></div>
+
+          <button type="submit" id="btnRegisterSubmit" class="btn btn-primary btn-block">
+            <span>Create Account</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="8.5" cy="7" r="4"></circle>
+              <line x1="20" y1="8" x2="20" y2="14"></line>
+              <line x1="23" y1="11" x2="17" y2="11"></line>
+            </svg>
+          </button>
+        </form>
+
+        <!-- 3. CHANGE PASSWORD FORM (ADMIN AUTHORIZED) -->
+        <form id="changePasswordForm" class="auth-form hidden" onsubmit="return false;">
+          <div class="admin-auth-banner">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            <span>Admin Authorization Required</span>
+          </div>
+
+          <div class="admin-credentials-box">
+            <div class="form-group-sm">
+              <label for="cpAdminUsername">Admin Username</label>
+              <input type="text" id="cpAdminUsername" placeholder="admin" required autocomplete="username">
+            </div>
+            <div class="form-group-sm">
+              <label for="cpAdminPassword">Admin Password</label>
+              <input type="password" id="cpAdminPassword" placeholder="••••••••" required autocomplete="current-password">
+            </div>
+          </div>
+
+          <div class="form-divider">
+            <span>Target Account &amp; New Password</span>
+          </div>
+
+          <div class="form-group">
+            <label for="cpTargetUsername">Account Username</label>
+            <input type="text" id="cpTargetUsername" placeholder="e.g. admin or username" required autocomplete="username">
+          </div>
+          <div class="form-group">
+            <label for="cpNewPassword">New Password</label>
+            <input type="password" id="cpNewPassword" placeholder="Min. 6 characters" required autocomplete="new-password">
+          </div>
+          <div class="form-group">
+            <label for="cpConfirmPassword">Confirm New Password</label>
+            <input type="password" id="cpConfirmPassword" placeholder="••••••••" required autocomplete="new-password">
+          </div>
+
+          <div id="cpError" class="alert-error hidden"></div>
+          <div id="cpSuccess" class="alert-success hidden"></div>
+
+          <button type="submit" id="btnChangePassSubmit" class="btn btn-primary btn-block">
+            <span>Update Password</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 2l-2 2m-6 6l7-7-2-2-7 7v4h4l7-7"></path>
+              <circle cx="7.5" cy="16.5" r="4.5"></circle>
             </svg>
           </button>
         </form>

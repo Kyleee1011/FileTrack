@@ -34,6 +34,10 @@
   padding: 0;
 }
 
+html {
+  scrollbar-gutter: stable;
+}
+
 html, body {
   width: 100%;
   height: 100%;
@@ -60,7 +64,8 @@ html, body {
     linear-gradient(to right, #0ed2da, #5f29c7);
   position: relative;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
   display: flex;
   flex-direction: column;
 }
@@ -1121,6 +1126,8 @@ html, body {
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 20px;
   width: 100%;
+  align-content: start;
+  min-height: 660px;
 }
 
 .file-card {
@@ -1276,6 +1283,8 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  align-content: start;
+  min-height: 580px;
 }
 
 .files-list-view .file-card {
@@ -2262,14 +2271,33 @@ html, body {
 /* ==========================================================================
    PAGINATION
    ========================================================================== */
+#filesSection {
+  display: flex;
+  flex-direction: column;
+  min-height: 740px;
+  position: relative;
+}
+
 .pagination-container {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border-light);
+  margin-top: auto;
+  padding: 10px 22px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 20px rgba(95, 41, 199, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
+  position: sticky;
+  bottom: 16px;
+  z-index: 15;
+  width: fit-content;
+  align-self: center;
+  min-height: 52px;
+  box-sizing: border-box;
   flex-wrap: wrap;
 }
 

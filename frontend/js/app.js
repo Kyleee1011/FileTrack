@@ -566,10 +566,12 @@ function renderFiles() {
 
   if (state.files.length === 0) {
     dom.emptyRepositoryNotice.classList.remove('hidden');
+    dom.filesContainer.classList.add('hidden');
     dom.paginationContainer.classList.add('hidden');
     return;
   }
   dom.emptyRepositoryNotice.classList.add('hidden');
+  dom.filesContainer.classList.remove('hidden');
 
   if (state.viewMode === 'list') {
     dom.filesContainer.className = 'files-list-view';

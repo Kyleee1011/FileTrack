@@ -1,8 +1,3 @@
-"""
-FileTrack Database Interface
-Provides robust connection management and strictly parameterized, prepared SQL execution.
-"""
-
 import pymysql
 from pymysql.cursors import DictCursor
 from contextlib import contextmanager

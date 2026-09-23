@@ -55,8 +55,12 @@ const dom = {
   regAdminUsername: document.getElementById('regAdminUsername'),
   regAdminPassword: document.getElementById('regAdminPassword'),
   regNewUsername: document.getElementById('regNewUsername'),
+  regDisplayName: document.getElementById('regDisplayName'),
   regNewPassword: document.getElementById('regNewPassword'),
   regConfirmPassword: document.getElementById('regConfirmPassword'),
+  regStorageDefault: document.getElementById('regStorageDefault'),
+  regStorageGroup: document.getElementById('regStorageGroup'),
+  regStorageQuota: document.getElementById('regStorageQuota'),
   btnRegisterSubmit: document.getElementById('btnRegisterSubmit'),
   regError: document.getElementById('regError'),
   regSuccess: document.getElementById('regSuccess'),
@@ -133,7 +137,6 @@ const dom = {
   btnRefreshScanner: document.getElementById('btnRefreshScanner'),
   sourcePlatenLabel: document.getElementById('sourcePlatenLabel'),
   sourceFeederLabel: document.getElementById('sourceFeederLabel'),
-  scanDuplexToggle: document.getElementById('scanDuplexToggle'),
   scanResolution: document.getElementById('scanResolution'),
   scanColorMode: document.getElementById('scanColorMode'),
   btnCancelScanSettings: document.getElementById('btnCancelScanSettings'),
@@ -204,7 +207,31 @@ const dom = {
   stagingSubtitle: document.getElementById('stagingSubtitle'),
   btnCancelUploadStaging: document.getElementById('btnCancelUploadStaging'),
   btnCommitUpload: document.getElementById('btnCommitUpload'),
-  commitUploadLabel: document.getElementById('commitUploadLabel')
+  commitUploadLabel: document.getElementById('commitUploadLabel'),
+
+  // User Management Modal
+  btnManageUsers: document.getElementById('btnManageUsers'),
+  userMgmtModal: document.getElementById('userMgmtModal'),
+  closeUserMgmtModal: document.getElementById('closeUserMgmtModal'),
+  closeBtnUserMgmt: document.getElementById('closeBtnUserMgmt'),
+  btnRefreshUsers: document.getElementById('btnRefreshUsers'),
+  userMgmtCount: document.getElementById('userMgmtCount'),
+  btnToggleAddUser: document.getElementById('btnToggleAddUser'),
+  toggleAddUserLabel: document.getElementById('toggleAddUserLabel'),
+  userMgmtAddBox: document.getElementById('userMgmtAddBox'),
+  btnCloseAddUserBox: document.getElementById('btnCloseAddUserBox'),
+  userMgmtAddForm: document.getElementById('userMgmtAddForm'),
+  umNewUsername: document.getElementById('umNewUsername'),
+  umDisplayName: document.getElementById('umDisplayName'),
+  umNewPassword: document.getElementById('umNewPassword'),
+  umStorageQuota: document.getElementById('umStorageQuota'),
+  umAddError: document.getElementById('umAddError'),
+  btnCancelAddUser: document.getElementById('btnCancelAddUser'),
+  btnSubmitAddUser: document.getElementById('btnSubmitAddUser'),
+  userMgmtLoading: document.getElementById('userMgmtLoading'),
+  userMgmtTable: document.getElementById('userMgmtTable'),
+  userMgmtTableBody: document.getElementById('userMgmtTableBody'),
+  userMgmtError: document.getElementById('userMgmtError')
 };
 
 // ==============================================================================
@@ -291,6 +318,22 @@ function formatDate(dateStr) {
 // AUTHENTICATION LOGIC
 // ==============================================================================
 
+function applyUserData(user) {
+  if (!user) return;
+  const displayName = user.display_name || user.username || 'User';
+  if (dom.userDisplayName) dom.userDisplayName.textContent = displayName;
+  if (dom.userInitial) dom.userInitial.textContent = displayName.charAt(0).toUpperCase();
+
+  const isAdmin = user.username === 'admin';
+  const roleLabel = document.getElementById('userRoleLabel');
+  if (roleLabel) {
+    roleLabel.textContent = isAdmin ? 'Administrator' : 'User';
+  }
+  if (dom.btnManageUsers) {
+    dom.btnManageUsers.classList.toggle('hidden', !isAdmin);
+  }
+}
+
 async function checkAuth() {
   if (!state.token) {
     showLoginView();
@@ -299,8 +342,7 @@ async function checkAuth() {
   try {
     const user = await api('/api/me');
     state.user = user;
-    dom.userDisplayName.textContent = user.username;
-    dom.userInitial.textContent = user.username.charAt(0).toUpperCase();
+    applyUserData(user);
     showAppView();
     loadFolder(null);
     loadStats();
@@ -317,6 +359,8 @@ function showLoginView() {
   dom.loginView.classList.remove('hidden');
   dom.loginView.classList.add('active');
   dom.appView.classList.add('hidden');
+  if (dom.btnManageUsers) dom.btnManageUsers.classList.add('hidden');
+  if (dom.userMgmtModal) dom.userMgmtModal.classList.add('hidden');
 }
 
 function showAppView() {
@@ -349,8 +393,7 @@ dom.loginForm.addEventListener('submit', async (e) => {
     state.user = res.user;
     localStorage.setItem('filetrack_token', res.token);
 
-    dom.userDisplayName.textContent = res.user.username;
-    dom.userInitial.textContent = res.user.username.charAt(0).toUpperCase();
+    applyUserData(res.user);
 
     showAppView();
     loadFolder(null);
@@ -410,6 +453,7 @@ dom.createAccountForm.addEventListener('submit', async (e) => {
   const adminUsername = dom.regAdminUsername.value.trim();
   const adminPassword = dom.regAdminPassword.value;
   const newUsername = dom.regNewUsername.value.trim();
+  const displayName = dom.regDisplayName ? dom.regDisplayName.value.trim() : '';
   const newPassword = dom.regNewPassword.value;
   const confirmPassword = dom.regConfirmPassword.value;
 
@@ -431,29 +475,54 @@ dom.createAccountForm.addEventListener('submit', async (e) => {
     return;
   }
 
+  let storageQuotaMb = null;
+  if (dom.regStorageDefault && !dom.regStorageDefault.checked) {
+    const parsedQuota = parseInt(dom.regStorageQuota.value, 10);
+    if (isNaN(parsedQuota) || parsedQuota <= 0) {
+      dom.regError.textContent = 'Please enter a valid positive storage limit in MB, or select system default.';
+      dom.regError.classList.remove('hidden');
+      return;
+    }
+    storageQuotaMb = parsedQuota;
+  }
+
   dom.btnRegisterSubmit.disabled = true;
   dom.btnRegisterSubmit.querySelector('span').textContent = 'Creating account...';
 
   try {
+    const payload = {
+      admin_username: adminUsername,
+      admin_password: adminPassword,
+      new_username: newUsername,
+      new_password: newPassword
+    };
+    if (displayName) payload.display_name = displayName;
+    if (storageQuotaMb) payload.storage_quota_mb = storageQuotaMb;
+
     const res = await api('/api/auth/create-account', {
       method: 'POST',
-      body: JSON.stringify({
-        admin_username: adminUsername,
-        admin_password: adminPassword,
-        new_username: newUsername,
-        new_password: newPassword
-      })
+      body: JSON.stringify(payload)
     });
 
-    dom.regSuccess.textContent = res.message || `Account '${newUsername}' created successfully!`;
+    const successMsg = res.message || `Account '${displayName || newUsername}' created successfully!`;
+    dom.regSuccess.textContent = successMsg;
     dom.regSuccess.classList.remove('hidden');
-    showToast(`Account '${newUsername}' created! You may now sign in.`, 'success');
+    showToast(`Account '${displayName || newUsername}' created! You may now sign in.`, 'success');
 
     // Reset fields
     dom.regNewUsername.value = '';
+    if (dom.regDisplayName) dom.regDisplayName.value = '';
     dom.regNewPassword.value = '';
     dom.regConfirmPassword.value = '';
     dom.regAdminPassword.value = '';
+    if (dom.regStorageDefault) dom.regStorageDefault.checked = true;
+    if (dom.regStorageGroup) dom.regStorageGroup.classList.add('hidden');
+    if (dom.regStorageQuota) dom.regStorageQuota.value = '';
+
+    // If user management table is open, reload it
+    if (dom.userMgmtModal && !dom.userMgmtModal.classList.contains('hidden')) {
+      loadUserManagementTable();
+    }
 
     // Automatically switch to login tab with the new username pre-filled
     setTimeout(() => {
@@ -471,6 +540,17 @@ dom.createAccountForm.addEventListener('submit', async (e) => {
     dom.btnRegisterSubmit.querySelector('span').textContent = 'Create Account';
   }
 });
+
+// Storage Default Checkbox Toggle
+if (dom.regStorageDefault && dom.regStorageGroup) {
+  dom.regStorageDefault.addEventListener('change', () => {
+    const isCustom = !dom.regStorageDefault.checked;
+    dom.regStorageGroup.classList.toggle('hidden', !isCustom);
+    if (isCustom && dom.regStorageQuota) {
+      dom.regStorageQuota.focus();
+    }
+  });
+}
 
 // CHANGE PASSWORD (ADMIN AUTHORIZED)
 dom.changePasswordForm.addEventListener('submit', async (e) => {
@@ -559,6 +639,241 @@ dom.logoutBtn.addEventListener('click', async () => {
   showLoginView();
   showToast('Logged out successfully.');
 });
+
+// ==============================================================================
+// USER MANAGEMENT (ADMIN ONLY)
+// ==============================================================================
+
+async function loadUserManagementTable() {
+  if (!dom.userMgmtTableBody) return;
+
+  if (dom.userMgmtLoading) dom.userMgmtLoading.classList.remove('hidden');
+  if (dom.userMgmtTable) dom.userMgmtTable.classList.add('hidden');
+  if (dom.userMgmtError) dom.userMgmtError.classList.add('hidden');
+
+  try {
+    const res = await api('/api/auth/users');
+    const users = res.users || [];
+
+    if (dom.userMgmtCount) {
+      dom.userMgmtCount.textContent = users.length;
+    }
+
+    if (users.length === 0) {
+      dom.userMgmtTableBody.innerHTML = `
+        <tr>
+          <td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);">
+            No registered users found.
+          </td>
+        </tr>
+      `;
+    } else {
+      dom.userMgmtTableBody.innerHTML = users.map(u => {
+        const isSelf = state.user && (state.user.id === u.id || state.user.username === u.username);
+        const isAdminAccount = u.username === 'admin';
+        const createdStr = u.created_at
+          ? new Date(u.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+          : '—';
+        const storageBadge = u.storage_quota_mb
+          ? `<span class="badge" style="background:rgba(99,102,241,0.12);color:#6366f1;font-weight:600;padding:3px 8px;border-radius:12px;font-size:12px;">${escapeHtml(u.storage_label || (u.storage_quota_mb + ' MB'))}</span>`
+          : `<span class="badge" style="background:rgba(100,116,139,0.1);color:var(--text-muted);padding:3px 8px;border-radius:12px;font-size:12px;">Default</span>`;
+
+        let actionHtml = '';
+        if (isAdminAccount) {
+          actionHtml = `<span style="font-size:12px;color:var(--text-muted);font-style:italic;">Admin (Protected)</span>`;
+        } else if (isSelf) {
+          actionHtml = `<span style="font-size:12px;color:var(--text-muted);font-style:italic;">Current User</span>`;
+        } else {
+          actionHtml = `
+            <button class="btn btn-xs btn-danger btn-delete-user" data-id="${u.id}" data-username="${escapeHtml(u.username)}" style="padding:4px 10px;font-size:12px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:6px;cursor:pointer;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right:4px;vertical-align:middle;">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              Delete
+            </button>
+          `;
+        }
+
+        return `
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:10px 12px;color:var(--text-muted);font-size:12px;">#${u.id}</td>
+            <td style="padding:10px 12px;font-weight:600;color:var(--text-primary);">${escapeHtml(u.display_name || u.username)}</td>
+            <td style="padding:10px 12px;color:var(--text-muted);font-family:monospace;font-size:13px;">${escapeHtml(u.username)}</td>
+            <td style="padding:10px 12px;">${storageBadge}</td>
+            <td style="padding:10px 12px;font-size:13px;color:var(--text-muted);">${createdStr}</td>
+            <td style="padding:10px 12px;">${actionHtml}</td>
+          </tr>
+        `;
+      }).join('');
+
+      // Wire up delete buttons
+      dom.userMgmtTableBody.querySelectorAll('.btn-delete-user').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const uid = btn.getAttribute('data-id');
+          const uname = btn.getAttribute('data-username');
+          if (!confirm(`Are you sure you want to permanently delete the user account "${uname}"?`)) {
+            return;
+          }
+          btn.disabled = true;
+          try {
+            const delRes = await api(`/api/auth/users/${uid}`, { method: 'DELETE' });
+            showToast(delRes.message || `User '${uname}' deleted.`, 'success');
+            await loadUserManagementTable();
+          } catch (err) {
+            showToast(err.message || 'Failed to delete user.', 'error');
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
+    if (dom.userMgmtLoading) dom.userMgmtLoading.classList.add('hidden');
+    if (dom.userMgmtTable) dom.userMgmtTable.classList.remove('hidden');
+
+  } catch (err) {
+    if (dom.userMgmtLoading) dom.userMgmtLoading.classList.add('hidden');
+    if (dom.userMgmtError) {
+      dom.userMgmtError.textContent = err.message || 'Failed to load user accounts.';
+      dom.userMgmtError.classList.remove('hidden');
+    }
+  }
+}
+
+// User Management Modal Open / Close / Refresh
+if (dom.btnManageUsers) {
+  dom.btnManageUsers.addEventListener('click', () => {
+    if (dom.userMgmtModal) {
+      dom.userMgmtModal.classList.remove('hidden');
+      if (dom.userMgmtAddBox) dom.userMgmtAddBox.classList.add('hidden');
+      if (dom.toggleAddUserLabel) dom.toggleAddUserLabel.textContent = 'Add User';
+      loadUserManagementTable();
+    }
+  });
+}
+
+if (dom.closeUserMgmtModal) {
+  dom.closeUserMgmtModal.addEventListener('click', () => {
+    if (dom.userMgmtModal) dom.userMgmtModal.classList.add('hidden');
+  });
+}
+
+if (dom.closeBtnUserMgmt) {
+  dom.closeBtnUserMgmt.addEventListener('click', () => {
+    if (dom.userMgmtModal) dom.userMgmtModal.classList.add('hidden');
+  });
+}
+
+if (dom.btnRefreshUsers) {
+  dom.btnRefreshUsers.addEventListener('click', () => {
+    loadUserManagementTable();
+  });
+}
+
+// Collapsible Add User Form in Modal
+function toggleAddUserBox(forceState) {
+  if (!dom.userMgmtAddBox) return;
+  const isHidden = dom.userMgmtAddBox.classList.contains('hidden');
+  const shouldOpen = typeof forceState === 'boolean' ? forceState : isHidden;
+  dom.userMgmtAddBox.classList.toggle('hidden', !shouldOpen);
+  if (dom.toggleAddUserLabel) {
+    dom.toggleAddUserLabel.textContent = shouldOpen ? 'Close Form' : 'Add User';
+  }
+  if (shouldOpen && dom.umNewUsername) {
+    dom.umNewUsername.focus();
+  }
+}
+
+if (dom.btnToggleAddUser) {
+  dom.btnToggleAddUser.addEventListener('click', () => toggleAddUserBox());
+}
+
+if (dom.btnCloseAddUserBox) {
+  dom.btnCloseAddUserBox.addEventListener('click', () => toggleAddUserBox(false));
+}
+
+if (dom.btnCancelAddUser) {
+  dom.btnCancelAddUser.addEventListener('click', () => toggleAddUserBox(false));
+}
+
+if (dom.userMgmtAddForm) {
+  dom.userMgmtAddForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (dom.umAddError) dom.umAddError.classList.add('hidden');
+
+    const newUsername = dom.umNewUsername.value.trim();
+    const displayName = dom.umDisplayName.value.trim();
+    const newPassword = dom.umNewPassword.value;
+    const rawQuota = dom.umStorageQuota.value.trim();
+
+    if (!newUsername) {
+      if (dom.umAddError) {
+        dom.umAddError.textContent = 'Username is required.';
+        dom.umAddError.classList.remove('hidden');
+      }
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      if (dom.umAddError) {
+        dom.umAddError.textContent = 'Password must be at least 6 characters.';
+        dom.umAddError.classList.remove('hidden');
+      }
+      return;
+    }
+
+    let storageQuotaMb = null;
+    if (rawQuota) {
+      const parsed = parseInt(rawQuota, 10);
+      if (isNaN(parsed) || parsed <= 0) {
+        if (dom.umAddError) {
+          dom.umAddError.textContent = 'Please enter a valid positive storage limit in MB.';
+          dom.umAddError.classList.remove('hidden');
+        }
+        return;
+      }
+      storageQuotaMb = parsed;
+    }
+
+    dom.btnSubmitAddUser.disabled = true;
+    dom.btnSubmitAddUser.textContent = 'Creating...';
+
+    try {
+      const payload = {
+        new_username: newUsername,
+        new_password: newPassword
+      };
+      if (displayName) payload.display_name = displayName;
+      if (storageQuotaMb) payload.storage_quota_mb = storageQuotaMb;
+
+      const res = await api('/api/auth/create-account', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+
+      showToast(res.message || `User '${displayName || newUsername}' created!`, 'success');
+
+      // Reset form
+      dom.umNewUsername.value = '';
+      dom.umDisplayName.value = '';
+      dom.umNewPassword.value = '';
+      dom.umStorageQuota.value = '';
+      toggleAddUserBox(false);
+
+      await loadUserManagementTable();
+
+    } catch (err) {
+      if (dom.umAddError) {
+        dom.umAddError.textContent = err.message || 'Failed to create user account.';
+        dom.umAddError.classList.remove('hidden');
+      }
+    } finally {
+      dom.btnSubmitAddUser.disabled = false;
+      dom.btnSubmitAddUser.textContent = 'Create Account';
+    }
+  });
+}
+
 
 // ==============================================================================
 // SIDEBAR TOGGLE (MOBILE / RESPONSIVE)
@@ -805,25 +1120,11 @@ function renderFiles() {
     const sourceClass = file.source === 'scan' ? 'badge-source-scan' : 'badge-source-upload';
     const sourceLabel = file.source === 'scan' ? 'Scan' : 'Upload';
 
-    let thumbHtml = '';
-    if (isImage || isPdf) {
-      thumbHtml = `
-        <div class="file-thumb-wrap" onclick="openViewerModal(${file.id})">
-          <img src="/api/files/${file.id}/thumbnail" alt="${escapeHtml(file.display_name)}" onerror="this.parentElement.innerHTML='<div class=\'file-icon-placeholder file-icon-${isPdf ? 'pdf' : 'image'}\'>📄</div>'">
-        </div>
-      `;
-    } else {
-      thumbHtml = `
-        <div class="file-thumb-wrap" onclick="openViewerModal(${file.id})">
-          <div class="file-icon-placeholder file-icon-default">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-            </svg>
-          </div>
-        </div>
-      `;
-    }
+    let thumbHtml = `
+      <div class="file-thumb-wrap" onclick="openViewerModal(${file.id})">
+        <img src="/static/asset/confidential.png" alt="Confidential" class="file-icon-placeholder" style="object-fit: cover; width: 100%; height: 100%;">
+      </div>
+    `;
 
     card.innerHTML = `
       ${thumbHtml}
@@ -1194,12 +1495,9 @@ sourceInputs.forEach(input => {
     if (input.value === 'Feeder') {
       dom.sourceFeederLabel.classList.add('active');
       dom.sourcePlatenLabel.classList.remove('active');
-      dom.scanDuplexToggle.disabled = false;
     } else {
       dom.sourcePlatenLabel.classList.add('active');
       dom.sourceFeederLabel.classList.remove('active');
-      dom.scanDuplexToggle.disabled = true;
-      dom.scanDuplexToggle.checked = false;
     }
   });
 });
@@ -1258,7 +1556,6 @@ function setFormatChoice(fmt) {
 
 dom.btnExecuteScan.addEventListener('click', async () => {
   const selectedSource = document.querySelector('input[name="scanSource"]:checked').value;
-  const isDuplex = dom.scanDuplexToggle.checked;
   const resolution = parseInt(dom.scanResolution.value, 10);
   const colorMode = dom.scanColorMode.value;
 
@@ -1270,7 +1567,7 @@ dom.btnExecuteScan.addEventListener('click', async () => {
       method: 'POST',
       body: JSON.stringify({
         source: selectedSource,
-        duplex: isDuplex,
+        duplex: false,
         resolution: resolution,
         color_mode: colorMode
       })
@@ -1326,7 +1623,22 @@ function renderScanPreview(job) {
   });
 
   if (job.notice) {
-    showToast(job.notice, 'info');
+    // Show a prominent blocking banner — not just a dismissible toast
+    const warningBanner = document.createElement('div');
+    warningBanner.className = 'scan-fallback-warning';
+    warningBanner.innerHTML = `
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="flex-shrink:0">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        <line x1="12" y1="9" x2="12" y2="13"></line>
+        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+      </svg>
+      <span><strong>Scanner Unreachable — Cannot Save:</strong> ${escapeHtml(job.notice)}</span>
+    `;
+    dom.previewThumbnailsGrid.parentNode.insertBefore(warningBanner, dom.previewThumbnailsGrid);
+    // Block saving — the pages shown are not real scans
+    dom.btnCommitScan.disabled = true;
+    dom.btnCommitScan.title = 'Cannot save: scanner was unreachable, pages shown are not real.';
+    showToast('Scanner unreachable — save is blocked.', 'error');
   }
 }
 
@@ -1407,8 +1719,10 @@ async function openViewerModal(fileId) {
     activeBlobUrl = null;
   }
 
+  const safeFileFormat = (file.file_format || '').toLowerCase();
+  const safeSource = (file.source || '').toUpperCase();
   dom.viewerFileName.textContent = file.display_name;
-  dom.viewerFileMeta.textContent = `${file.file_format.toUpperCase()} • ${formatBytes(file.size_bytes)} • Source: ${file.source.toUpperCase()}`;
+  dom.viewerFileMeta.textContent = `${safeFileFormat.toUpperCase()} • ${formatBytes(file.size_bytes)} • Source: ${safeSource}`;
 
   const tokenQuery = state.token ? `&token=${encodeURIComponent(state.token)}` : '';
   dom.viewerDownloadBtn.href = `/api/files/${file.id}?download=1${tokenQuery}`;
@@ -1416,42 +1730,52 @@ async function openViewerModal(fileId) {
   dom.viewerContent.innerHTML = '<div class="viewer-loading"><div class="viewer-spinner"></div><p>Loading document preview...</p></div>';
   dom.fileViewerModal.classList.remove('hidden');
 
-  const isPdf = file.file_format === 'pdf' || file.display_name.toLowerCase().endsWith('.pdf');
-  const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(file.file_format.toLowerCase());
+  const isPdf = safeFileFormat === 'pdf' || (file.display_name || '').toLowerCase().endsWith('.pdf');
+  const isImage = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(safeFileFormat);
 
   try {
-    // Fetch the raw file bytes with auth — bypass api() to avoid JSON auto-parsing
-    const rawResp = await fetch(`/api/files/${file.id}`, {
-      headers: state.token ? { 'Authorization': `Bearer ${state.token}` } : {},
-      credentials: 'include'
-    });
-
-    if (!rawResp.ok) throw new Error(`HTTP ${rawResp.status}`);
-
-    const blob = await rawResp.blob();
-
     if (isPdf) {
-      // Create a blob URL typed as application/pdf so the browser renders it inline
-      const pdfBlob = new Blob([blob], { type: 'application/pdf' });
-      activeBlobUrl = URL.createObjectURL(pdfBlob);
+      // Use preview-data endpoint to bypass download managers
+      const previewData = await api(`/api/files/${file.id}/preview-data`);
+      const binaryString = atob(previewData.data);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const arrayBuffer = bytes.buffer;
 
-      // iframe is the most reliable inline PDF viewer across Chrome, Edge, Firefox
-      dom.viewerContent.innerHTML = `
-        <iframe
-          src="${activeBlobUrl}"
-          class="pdf-viewer-frame"
-          title="${escapeHtml(file.display_name)}"
-          type="application/pdf"
-        >
-          <div class="pdf-fallback">
-            <p>Your browser does not support inline PDF preview.</p>
-            <a href="${dom.viewerDownloadBtn.href}" class="btn btn-primary">Download PDF</a>
-          </div>
-        </iframe>
-      `;
+      if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+        throw new Error('File response was empty. The server may have returned no data.');
+      }
+
+      if (typeof pdfjsLib === 'undefined') {
+        throw new Error('PDF.js is not loaded. Check your internet connection and reload the page.');
+      }
+
+      const pdfDoc = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+      dom.viewerContent.innerHTML = '<div id="pdfCanvasContainer" class="pdf-canvas-container"></div>';
+      const container = document.getElementById('pdfCanvasContainer');
+
+      for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.5 });
+        const wrapper = document.createElement('div');
+        wrapper.className = 'pdf-page-wrapper';
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        canvas.className = 'pdf-page-canvas';
+        wrapper.appendChild(canvas);
+        container.appendChild(wrapper);
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      }
+
     } else if (isImage) {
-      const imgBlob = new Blob([blob], { type: blob.type || 'image/*' });
-      activeBlobUrl = URL.createObjectURL(imgBlob);
+      // Use preview-data endpoint to bypass download managers
+      const previewData = await api(`/api/files/${file.id}/preview-data`);
+      const mimeType = previewData.mime || 'image/jpeg';
+      activeBlobUrl = `data:${mimeType};base64,${previewData.data}`;
       dom.viewerContent.innerHTML = `<img src="${activeBlobUrl}" alt="${escapeHtml(file.display_name)}" class="img-viewer-display">`;
     } else {
       dom.viewerContent.innerHTML = `
@@ -1466,25 +1790,13 @@ async function openViewerModal(fileId) {
       `;
     }
   } catch (err) {
-    // Fallback: try a direct URL approach with token in query string
-    const directUrl = `/api/files/${file.id}?token=${encodeURIComponent(state.token || '')}`;
-    if (isPdf) {
-      dom.viewerContent.innerHTML = `
-        <iframe
-          src="${directUrl}"
-          class="pdf-viewer-frame"
-          title="${escapeHtml(file.display_name)}"
-        >
-        </iframe>
-      `;
-    } else {
-      dom.viewerContent.innerHTML = `
-        <div class="unsupported-viewer">
-          <p>Error loading preview: ${escapeHtml(err.message)}</p>
-          <a href="${dom.viewerDownloadBtn.href}" class="btn btn-primary" style="margin-top:14px;">Download Document</a>
-        </div>
-      `;
-    }
+    // Fallback error state
+    dom.viewerContent.innerHTML = `
+      <div class="unsupported-viewer">
+        <p>Error loading preview: ${escapeHtml(err.message)}</p>
+        <a href="${dom.viewerDownloadBtn.href}" class="btn btn-primary" style="margin-top:14px;">Download Document</a>
+      </div>
+    `;
   }
 }
 
@@ -1694,12 +2006,14 @@ window.addEventListener('keydown', (e) => {
     dom.folderModal.classList.add('hidden');
     dom.renameModal.classList.add('hidden');
     dom.confirmDeleteModal.classList.add('hidden');
+    if (dom.userMgmtModal) dom.userMgmtModal.classList.add('hidden');
     if (!dom.uploadStagingModal.classList.contains('hidden')) closeUploadStagingModal();
     closeMobileSidebar();
   }
 });
 
-[dom.scanModal, dom.fileViewerModal, dom.folderModal, dom.renameModal, dom.confirmDeleteModal].forEach(modal => {
+[dom.scanModal, dom.fileViewerModal, dom.folderModal, dom.renameModal, dom.confirmDeleteModal, dom.userMgmtModal].forEach(modal => {
+  if (!modal) return;
   modal.addEventListener('click', (e) => {
     if (e.target === modal) {
       modal.classList.add('hidden');

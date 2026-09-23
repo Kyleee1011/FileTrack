@@ -2,8 +2,11 @@ import os
 import uuid
 import shutil
 import logging
+import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any
+
+from PIL import Image
 
 from fastapi import (
     FastAPI, Request, Response, HTTPException, Depends, 
@@ -48,10 +51,12 @@ class LoginRequest(BaseModel):
 
 
 class CreateAccountRequest(BaseModel):
-    admin_username: str = Field(..., min_length=1, max_length=64)
-    admin_password: str = Field(..., min_length=1)
+    admin_username: Optional[str] = Field(None, max_length=64)
+    admin_password: Optional[str] = None
     new_username: str = Field(..., min_length=3, max_length=64)
     new_password: str = Field(..., min_length=6)
+    display_name: Optional[str] = Field(None, max_length=100)
+    storage_quota_mb: Optional[int] = Field(None, gt=0)
 
 
 class ChangePasswordRequest(BaseModel):
@@ -136,7 +141,7 @@ def login(payload: LoginRequest, request: Request, response: Response):
     # 2. Parameterized user lookup
     try:
         user = database.query_one(
-            "SELECT id, username, password_hash FROM users WHERE username = %s",
+            "SELECT id, username, display_name, storage_quota_mb, password_hash FROM users WHERE username = %s",
             (payload.username,)
         )
     except Exception as e:
@@ -170,12 +175,15 @@ def login(payload: LoginRequest, request: Request, response: Response):
 
     log_audit("login", details=f"User {user['username']} logged in", ip_address=client_ip)
 
+    effective_display_name = user.get("display_name") or user["username"]
     return {
         "success": True,
         "token": token,
         "user": {
             "id": user["id"],
-            "username": user["username"]
+            "username": user["username"],
+            "display_name": effective_display_name,
+            "storage_quota_mb": user.get("storage_quota_mb")
         }
     }
 
@@ -236,9 +244,36 @@ def verify_admin_auth(admin_username: str, admin_password: str, request: Optiona
 @app.post("/api/auth/create-account")
 def create_account(payload: CreateAccountRequest, request: Request):
     """
-    Creates a new user account. Requires valid admin credentials to authorize creation.
+    Creates a new user account. Requires valid admin authorization:
+    either an active admin session or valid admin credentials in the request body.
     """
-    admin_user = verify_admin_auth(payload.admin_username, payload.admin_password, request)
+    auth_header = request.headers.get("Authorization") or ""
+    token = None
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+    elif "filetrack_session" in request.cookies:
+        token = request.cookies.get("filetrack_session")
+
+    is_session_admin = False
+    admin_name = "admin"
+    if token and token in auth._sessions:
+        sess = auth._sessions[token]
+        if sess.get("expires_at", 0) > time.time():
+            admin_chk = database.query_one("SELECT id, username FROM users WHERE id = %s", (sess.get("user_id"),))
+            if admin_chk and (admin_chk.get("username") == "admin" or admin_chk.get("id") == 1):
+                is_session_admin = True
+                admin_name = admin_chk.get("username", "admin")
+
+    if not is_session_admin:
+        if not payload.admin_username or not payload.admin_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Admin credentials are required to authorize account creation."
+            )
+        admin_user = verify_admin_auth(payload.admin_username, payload.admin_password, request)
+        admin_name = admin_user.get("username", "admin")
+
+
 
     clean_new_user = payload.new_username.strip()
     import re
@@ -264,27 +299,77 @@ def create_account(payload: CreateAccountRequest, request: Request):
             detail=f"Username '{clean_new_user}' is already registered."
         )
 
+    # Validate and clean optional display name
+    clean_display_name = (payload.display_name or "").strip() or None
+    storage_quota_mb = payload.storage_quota_mb if payload.storage_quota_mb and payload.storage_quota_mb > 0 else None
+
     password_hash = auth.hash_password(payload.new_password)
     user_id = database.execute(
-        "INSERT INTO users (username, password_hash) VALUES (%s, %s)",
-        (clean_new_user, password_hash)
+        "INSERT INTO users (username, display_name, storage_quota_mb, password_hash) VALUES (%s, %s, %s, %s)",
+        (clean_new_user, clean_display_name, storage_quota_mb, password_hash)
     )
 
     client_ip = request.client.host if request.client else "127.0.0.1"
     log_audit(
         "user_create",
-        details=f"User '{clean_new_user}' (id={user_id}) created by admin '{admin_user['username']}'",
+        details=f"User '{clean_new_user}' (id={user_id}) created by admin '{admin_name}'",
         ip_address=client_ip
     )
 
+    effective_name = clean_display_name or clean_new_user
     return {
         "success": True,
-        "message": f"Account '{clean_new_user}' created successfully. You may now sign in.",
-        "user": {"id": user_id, "username": clean_new_user}
+        "message": f"Account '{effective_name}' created successfully. They may now sign in.",
+        "user": {
+            "id": user_id,
+            "username": clean_new_user,
+            "display_name": effective_name,
+            "storage_quota_mb": storage_quota_mb
+        }
     }
 
 
+@app.get("/api/auth/users")
+def list_users(current_user: Dict[str, Any] = Depends(auth.get_current_user)):
+    """
+    Returns all user accounts. Requires admin (username == 'admin').
+    """
+    if current_user.get("username") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can view user accounts."
+        )
+    users = database.query_all(
+        "SELECT id, username, display_name, storage_quota_mb, created_at FROM users ORDER BY created_at ASC"
+    )
+    for u in users:
+        u["display_name"] = u.get("display_name") or u["username"]
+        u["storage_label"] = f"{u['storage_quota_mb']} MB" if u.get("storage_quota_mb") else "System Default"
+    return {"success": True, "users": users}
+
+
+@app.delete("/api/auth/users/{user_id}")
+def delete_user(
+    user_id: int,
+    current_user: Dict[str, Any] = Depends(auth.get_current_user)
+):
+    """
+    Deletes a user account. Admin only. Cannot delete yourself.
+    """
+    if current_user.get("username") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only.")
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot delete your own account.")
+    target = database.query_one("SELECT id, username FROM users WHERE id = %s", (user_id,))
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found.")
+    database.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    log_audit("user_delete", details=f"User '{target['username']}' (id={user_id}) deleted by admin '{current_user['username']}'")
+    return {"success": True, "message": f"User '{target['username']}' deleted."}
+
+
 @app.post("/api/auth/change-password")
+
 def change_password(payload: ChangePasswordRequest, request: Request):
     """
     Updates a user's password. Requires valid admin credentials to authorize the change.
@@ -346,8 +431,11 @@ def get_current_user_info(current_user: Dict[str, Any] = Depends(auth.get_curren
     return {
         "id": current_user["id"],
         "username": current_user["username"],
+        "display_name": current_user.get("display_name") or current_user["username"],
+        "storage_quota_mb": current_user.get("storage_quota_mb"),
         "created_at": str(current_user["created_at"])
     }
+
 
 
 # ==============================================================================
@@ -641,10 +729,47 @@ def get_file(
         filename=safe_filename,
         content_disposition_type=disposition,
         headers={
-            "Content-Disposition": f'{disposition}; filename="{safe_filename}"',
             "X-Content-Type-Options": "nosniff"
         }
     )
+
+
+@app.get("/api/files/{file_id}/preview-data")
+def get_file_preview_data(
+    file_id: int,
+    current_user: Dict[str, Any] = Depends(auth.get_current_user)
+):
+    """
+    Returns file bytes as a base64-encoded JSON payload.
+    This bypasses download managers (like IDM) that intercept file MIME-type responses,
+    because JSON responses are never intercepted by download managers.
+    Used exclusively by the in-browser PDF/image canvas viewer.
+    """
+    import base64
+    file_record = database.query_one("SELECT * FROM files WHERE id = %s", (file_id,))
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found.")
+
+    file_path = config.STORAGE_DIR / file_record["stored_filename"]
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File binary not found on disk.")
+
+    fmt = (file_record.get("file_format") or "").lower()
+    mime_type = file_record.get("mime_type") or "application/octet-stream"
+    if fmt == "pdf" or file_record["display_name"].lower().endswith(".pdf"):
+        mime_type = "application/pdf"
+    elif fmt in ("png", "jpg", "jpeg", "webp", "gif"):
+        mime_type = f"image/{fmt if fmt != 'jpg' else 'jpeg'}"
+
+    raw_bytes = file_path.read_bytes()
+    encoded = base64.b64encode(raw_bytes).decode("ascii")
+
+    return {
+        "data": encoded,
+        "mime": mime_type,
+        "size": len(raw_bytes),
+        "name": file_record["display_name"]
+    }
 
 
 @app.get("/api/files/{file_id}/thumbnail")

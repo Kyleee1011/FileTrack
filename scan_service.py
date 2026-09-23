@@ -34,6 +34,7 @@ def build_scan_settings_xml(
     Constructs the PWG/eSCL XML payload for the scan job.
     Region: 2550x3300 = US Letter at 300dpi (roughly 2480x3508 for A4).
     """
+    actual_source = "ADF" if duplex and input_source.lower() == "feeder" else input_source
     duplex_element = (
         f"<scan:Duplex>{'true' if duplex else 'false'}</scan:Duplex>"
         if input_source.lower() == "feeder" else ""
@@ -56,8 +57,9 @@ def build_scan_settings_xml(
       <pwg:YOffset>0</pwg:YOffset>
     </pwg:ScanRegion>
   </pwg:ScanRegions>
-  <pwg:InputSource>{input_source}</pwg:InputSource>
+  <pwg:InputSource>{actual_source}</pwg:InputSource>
   {duplex_element}
+  <pwg:DocumentFormatExt>image/jpeg</pwg:DocumentFormatExt>
   <scan:ColorMode>{color_mode}</scan:ColorMode>
   <scan:XResolution>{resolution}</scan:XResolution>
   <scan:YResolution>{resolution}</scan:YResolution>
@@ -209,7 +211,7 @@ def _run_scan_job(job_id: str, input_source: str, duplex: bool, resolution: int,
             got_page = False
             while waited < max_wait_per_page:
                 try:
-                    page_resp = requests.get(doc_url, timeout=config.PRINTER_TIMEOUT)
+                    page_resp = requests.get(doc_url, timeout=120)
                 except requests.RequestException as e:
                     time.sleep(1)
                     waited += 1
@@ -262,10 +264,16 @@ def _run_scan_job(job_id: str, input_source: str, duplex: bool, resolution: int,
                     got_page = True
                     break
 
-                elif page_resp.status_code in (404, 410):
-                    # 410 or 404 indicates job complete or waiting for next page
-                    time.sleep(1)
-                    waited += 1
+                elif page_resp.status_code == 410:
+                    # 410 Gone = eSCL job complete, no more pages — break immediately
+                    break
+                elif page_resp.status_code == 404:
+                    # 404 = feeder empty or job already finished — treat as end-of-job
+                    break
+                elif page_resp.status_code == 503:
+                    # 503 Service Unavailable = scanner still warming up/busy — retry with back-off
+                    time.sleep(2)
+                    waited += 2
                 else:
                     raise RuntimeError(f"Unexpected status code {page_resp.status_code} from printer: {page_resp.text[:200]}")
 
@@ -281,20 +289,20 @@ def _run_scan_job(job_id: str, input_source: str, duplex: bool, resolution: int,
             job["pages"] = pages_info
             job["page_count"] = len(pages_info)
 
-    except Exception as e:
-        logger.error(f"Scan job {job_id} failed against {config.PRINTER_IP}: {e}")
+    except requests.exceptions.HTTPError as e:
+        err_msg = str(e)
+        if e.response is not None and e.response.status_code == 500 and input_source == "Feeder":
+            err_msg = "ADF feeder is empty or scanner is busy (500 Error)."
         
-        # Graceful LAN test fallback: if physical printer is offline/unreachable,
-        # generate a sample scan so the full UI workflow and database commit can be verified
-        logger.info(f"Generating test scan for job {job_id} due to unreachable printer.")
-        sample_pages = 2 if (input_source.lower() == "feeder" or duplex) else 1
-        pages_info = _generate_demo_scan(stage_dir, page_count=sample_pages)
-
+        logger.error(f"Scan job {job_id} failed: {err_msg}")
         with _jobs_lock:
-            job["status"] = "ready"
-            job["pages"] = pages_info
-            job["page_count"] = len(pages_info)
-            job["notice"] = f"Printer at {config.PRINTER_IP} was unreachable ({str(e)}). Staged test document capture."
+            job["status"] = "error"
+            job["error"] = f"Scan failed: {err_msg}"
+    except Exception as e:
+        logger.error(f"Scan job {job_id} failed: {e}")
+        with _jobs_lock:
+            job["status"] = "error"
+            job["error"] = f"Scan failed: {e}"
 
 
 def start_scan(

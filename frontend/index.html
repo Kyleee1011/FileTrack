@@ -78,11 +78,15 @@
           </div>
 
           <div class="form-group">
-            <label for="regNewUsername">New Username</label>
+            <label for="regNewUsername">Username</label>
             <input type="text" id="regNewUsername" placeholder="e.g. jdoe" required autocomplete="new-username">
           </div>
           <div class="form-group">
-            <label for="regNewPassword">New Password</label>
+            <label for="regDisplayName">Full Name / Display Name <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+            <input type="text" id="regDisplayName" placeholder="e.g. Juan Dela Cruz" maxlength="100" autocomplete="name">
+          </div>
+          <div class="form-group">
+            <label for="regNewPassword">Password</label>
             <input type="password" id="regNewPassword" placeholder="Min. 6 characters" required autocomplete="new-password">
           </div>
           <div class="form-group">
@@ -90,6 +94,16 @@
             <input type="password" id="regConfirmPassword" placeholder="••••••••" required autocomplete="new-password">
           </div>
 
+          <div class="form-group">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="regStorageDefault" checked style="width:auto;accent-color:var(--accent);">
+              <span>Use system default storage</span>
+            </label>
+          </div>
+          <div class="form-group hidden" id="regStorageGroup">
+            <label for="regStorageQuota">Storage Limit (MB)</label>
+            <input type="number" id="regStorageQuota" placeholder="e.g. 500" min="1" max="999999">
+          </div>
           <div id="regError" class="alert-error hidden"></div>
           <div id="regSuccess" class="alert-success hidden"></div>
 
@@ -268,8 +282,16 @@
             <div class="user-avatar" id="userInitial">A</div>
             <div class="user-meta">
               <span class="user-name" id="userDisplayName">admin</span>
-              <span class="user-role">Single Admin</span>
+              <span class="user-role" id="userRoleLabel">Administrator</span>
             </div>
+            <button id="btnManageUsers" class="btn-icon hidden" title="Manage Users">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="9" cy="7" r="4"></circle>
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+              </svg>
+            </button>
             <button id="logoutBtn" class="btn-icon" title="Log Out">
               <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
@@ -278,6 +300,7 @@
               </svg>
             </button>
           </div>
+
         </div>
       </aside>
 
@@ -568,14 +591,6 @@
               </div>
             </div>
 
-            <div class="option-card" id="duplexOptionCard">
-              <label class="option-label">Duplex (Both Sides)</label>
-              <label class="checkbox-container">
-                <input type="checkbox" id="scanDuplexToggle" disabled>
-                <span class="custom-checkbox"></span>
-                <span class="checkbox-label">Scan both front & back (Feeder only)</span>
-              </label>
-            </div>
 
             <div class="option-card">
               <label class="option-label" for="scanResolution">Resolution</label>
@@ -891,6 +906,101 @@
   <!-- TOAST NOTIFICATION STACK -->
   <div id="toastContainer" class="toast-stack"></div>
 
+  <!-- USER MANAGEMENT MODAL -->
+  <div id="userMgmtModal" class="modal-backdrop hidden" style="z-index:2100;">
+    <div class="modal-card" style="max-width:780px;">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <div class="modal-icon" style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </div>
+          <div>
+            <h3 style="margin:0;">User Management</h3>
+            <span class="modal-subtitle">Admin view of all registered accounts</span>
+          </div>
+        </div>
+        <button id="closeUserMgmtModal" class="btn-icon" title="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+          <span style="font-size:0.88rem;color:var(--text-muted);"><strong id="userMgmtCount">0</strong> user accounts registered</span>
+          <button type="button" class="btn btn-sm btn-primary" id="btnToggleAddUser" style="display:inline-flex;align-items:center;gap:6px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span id="toggleAddUserLabel">Add User</span>
+          </button>
+        </div>
+
+        <!-- Collapsible Add User Form -->
+        <div id="userMgmtAddBox" class="hidden" style="margin-bottom:16px;padding:16px;background:var(--surface-1,#f8fafc);border:1px solid var(--border);border-radius:var(--radius-md,8px);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h4 style="margin:0;font-size:0.92rem;font-weight:600;display:flex;align-items:center;gap:6px;">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="8.5" cy="7" r="4"></circle><line x1="20" y1="8" x2="20" y2="14"></line><line x1="23" y1="11" x2="17" y2="11"></line></svg>
+              Create New Account
+            </h4>
+            <button type="button" id="btnCloseAddUserBox" class="btn-icon-xs" title="Cancel" style="border:none;background:transparent;cursor:pointer;font-size:18px;line-height:1;color:var(--text-muted);">&times;</button>
+          </div>
+          <form id="userMgmtAddForm" onsubmit="return false;">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+              <div class="form-group-sm">
+                <label for="umNewUsername" style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:4px;">Username *</label>
+                <input type="text" id="umNewUsername" placeholder="e.g. jdoe" required style="width:100%;padding:6px 10px;font-size:0.85rem;border:1px solid var(--border);border-radius:6px;">
+              </div>
+              <div class="form-group-sm">
+                <label for="umDisplayName" style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:4px;">Display Name</label>
+                <input type="text" id="umDisplayName" placeholder="e.g. Juan Dela Cruz" style="width:100%;padding:6px 10px;font-size:0.85rem;border:1px solid var(--border);border-radius:6px;">
+              </div>
+              <div class="form-group-sm">
+                <label for="umNewPassword" style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:4px;">Password *</label>
+                <input type="password" id="umNewPassword" placeholder="Min. 6 chars" required style="width:100%;padding:6px 10px;font-size:0.85rem;border:1px solid var(--border);border-radius:6px;">
+              </div>
+              <div class="form-group-sm">
+                <label for="umStorageQuota" style="font-size:0.8rem;font-weight:600;display:block;margin-bottom:4px;">Storage Quota (MB)</label>
+                <input type="number" id="umStorageQuota" placeholder="Leave empty for default" min="1" style="width:100%;padding:6px 10px;font-size:0.85rem;border:1px solid var(--border);border-radius:6px;">
+              </div>
+            </div>
+            <div id="umAddError" class="alert-error hidden" style="margin-bottom:10px;font-size:0.82rem;padding:8px 12px;"></div>
+            <div style="display:flex;justify-content:flex-end;gap:8px;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnCancelAddUser">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm" id="btnSubmitAddUser">Create Account</button>
+            </div>
+          </form>
+        </div>
+
+        <div id="userMgmtLoading" style="text-align:center;padding:32px;color:var(--text-muted);">Loading users...</div>
+        <div style="overflow-x:auto;">
+          <table id="userMgmtTable" class="hidden" style="width:100%;border-collapse:collapse;font-size:0.88rem;">
+            <thead>
+              <tr style="background:var(--surface-1,#f5f5f5);">
+                <th style="padding:10px 12px;text-align:left;font-weight:600;border-bottom:2px solid var(--border);">ID</th>
+                <th style="padding:10px 12px;text-align:left;font-weight:600;border-bottom:2px solid var(--border);">Display Name</th>
+                <th style="padding:10px 12px;text-align:left;font-weight:600;border-bottom:2px solid var(--border);">Username</th>
+                <th style="padding:10px 12px;text-align:left;font-weight:600;border-bottom:2px solid var(--border);">Storage Quota</th>
+                <th style="padding:10px 12px;text-align:left;font-weight:600;border-bottom:2px solid var(--border);">Created</th>
+                <th style="padding:10px 12px;text-align:left;font-weight:600;border-bottom:2px solid var(--border);">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="userMgmtTableBody"></tbody>
+          </table>
+        </div>
+        <div id="userMgmtError" class="alert-error hidden" style="margin-top:12px;"></div>
+      </div>
+      <div class="modal-footer" style="justify-content:space-between;">
+        <button class="btn btn-secondary" id="btnRefreshUsers">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>
+          Refresh
+        </button>
+        <button class="btn btn-secondary" id="closeBtnUserMgmt">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- PDF.js for IDM-safe in-browser PDF rendering (canvas-based, no download trigger) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>
@@ -900,6 +1010,6 @@
   </script>
 
   <!-- Application Script -->
-  <script src="/static/js/app.js"></script>
+  <script src="/static/js/app.js?v=6"></script>
 </body>
 </html>

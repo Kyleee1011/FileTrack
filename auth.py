@@ -145,13 +145,13 @@ def get_token_from_request(
     Resolves session token from either HTTP-only cookie, Authorization: Bearer <token>,
     or ?token= query parameter (for direct iframe / media viewing).
     """
-    if cookie_token:
-        return cookie_token
     if auth_header:
         parts = auth_header.split()
         if len(parts) == 2 and parts[0].lower() == "bearer":
             return parts[1]
         return auth_header
+    if cookie_token:
+        return cookie_token
     query_token = request.query_params.get("token")
     if query_token:
         return query_token
@@ -185,7 +185,7 @@ def get_current_user(token: Optional[str] = Depends(get_token_from_request)) -> 
     # Fetch user from database to ensure user still exists and get latest details
     try:
         user = database.query_one(
-            "SELECT id, username, created_at FROM users WHERE id = %s",
+            "SELECT id, username, display_name, storage_quota_mb, created_at FROM users WHERE id = %s",
             (session["user_id"],)
         )
         if not user:
@@ -194,6 +194,7 @@ def get_current_user(token: Optional[str] = Depends(get_token_from_request)) -> 
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="User account no longer exists."
             )
+        user["display_name"] = user.get("display_name") or user["username"]
         return user
     except HTTPException:
         raise

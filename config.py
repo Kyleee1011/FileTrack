@@ -13,11 +13,11 @@ BASE_DIR = Path(__file__).resolve().parent
 # DATABASE CONFIGURATION (MySQL / MariaDB)
 # ==============================================================================
 # Input your database credentials below:
-DB_HOST = os.getenv("FILETRACK_DB_HOST", "192.168.21.55")
-DB_PORT = int(os.getenv("FILETRACK_DB_PORT", 3306))
-DB_USER = os.getenv("FILETRACK_DB_USER", "dev")
-DB_PASSWORD = os.getenv("FILETRACK_DB_PASSWORD", "Azzurro2025")
-DB_NAME = os.getenv("FILETRACK_DB_NAME", "filetrack")
+DB_HOST = os.getenv("FILETRACK_DB_HOST", "")
+DB_PORT = int(os.getenv("FILETRACK_DB_PORT", ))
+DB_USER = os.getenv("FILETRACK_DB_USER", "")
+DB_PASSWORD = os.getenv("FILETRACK_DB_PASSWORD", "")
+DB_NAME = os.getenv("FILETRACK_DB_NAME", "")
 
 # ==============================================================================
 # PRINTER / SCANNER CONFIGURATION (Canon eSCL over HTTP)
